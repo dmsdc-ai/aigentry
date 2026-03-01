@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap');
+  * { margin: 0; padding: 0; }
+  body { width: 2560px; height: 1440px; overflow: hidden; background: #0a0a0a; }
+
+  .banner {
+    width: 2560px; height: 1440px;
+    background: radial-gradient(ellipse 60% 50% at 50% 50%, #110e15 0%, #0d0a10 40%, #0a0a0a 100%);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Braille blob field - static snapshot of MorphAnimation */
+  .braille-field {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    line-height: 1.15;
+    letter-spacing: 0.05em;
+    white-space: pre;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  /* Content overlay */
+  .content {
+    position: relative;
+    z-index: 10;
+    text-align: center;
+  }
+
+  .mascot-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 72px;
+    letter-spacing: -0.05em;
+    line-height: 1;
+    margin-bottom: 16px;
+  }
+  .mascot-eye { color: #06b6d4; text-shadow: 0 0 20px rgba(6,182,212,0.5); }
+  .mascot-core { color: #d4a574; text-shadow: 0 0 20px rgba(212,165,116,0.4); }
+
+  .logo-text {
+    font-size: 120px;
+    font-weight: 800;
+    letter-spacing: -3px;
+    background: linear-gradient(135deg, #ffffff 0%, #e5e5e5 40%, #d4d4d4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1;
+  }
+
+  .tagline {
+    font-size: 28px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    margin-top: 16px;
+  }
+
+  .divider {
+    width: 120px; height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(212,165,116,0.4), transparent);
+    margin: 28px auto;
+  }
+
+  .products {
+    display: flex;
+    gap: 40px;
+    justify-content: center;
+    margin-top: 8px;
+  }
+  .product {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 20px;
+    border: 1px solid rgba(212,165,116,0.15);
+    border-radius: 100px;
+    background: rgba(212,165,116,0.03);
+  }
+  .product-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot-brain { background: #d4a574; box-shadow: 0 0 6px rgba(212,165,116,0.4); }
+  .dot-delib { background: #06b6d4; box-shadow: 0 0 6px rgba(6,182,212,0.4); }
+  .dot-reg { background: #8b5cf6; box-shadow: 0 0 6px rgba(139,92,246,0.4); }
+  .product-name {
+    font-size: 18px;
+    color: rgba(255,255,255,0.5);
+    font-weight: 500;
+    letter-spacing: 1px;
+  }
+
+  .bottom-accent {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg,
+      transparent 15%,
+      #d4a574 35%,
+      #06b6d4 50%,
+      #8b5cf6 65%,
+      transparent 85%
+    );
+    opacity: 0.4;
+  }
+</style>
+</head>
+<body>
+<div class="banner">
+
+  <!-- Braille particle field - simulating MorphAnimation static frame -->
+  <div class="braille-field">
+<span style="color:rgba(6,182,212,0.12)">                              ·       ⋅                  ✧         ·                              </span>
+<span style="color:rgba(139,92,246,0.10)">                    ✦               ·            °                    ⋅          ·                </span>
+<span style="color:rgba(6,182,212,0.08)">          ·                  ⋅              ·                    ·                         ✧      </span>
+<span style="color:rgba(236,72,153,0.10)">                  °      ·            ✧                ·                  °            ·         </span>
+<span style="color:rgba(16,185,129,0.08)">       ⋅                        ·                                    ·            ⋅             </span>
+<span style="color:rgba(59,130,246,0.12)">                 ·         ⋅                  ·            °                 ·                   </span>
+<span style="color:rgba(251,191,36,0.10)">          ✧                       °                 ·                ⋅                     ·    </span>
+<span style="color:rgba(6,182,212,0.15)">   ·              ·           ⋅</span><span style="color:rgba(6,182,212,0.2)">      ⠈  ⠐  ⠠               </span><span style="color:rgba(6,182,212,0.12)">               ·         ✦         </span>
+<span style="color:rgba(139,92,246,0.12)">            °                </span><span style="color:rgba(212,165,116,0.2)">    ⠓ ⠚  ⠙  ⠛                 </span><span style="color:rgba(236,72,153,0.10)">         ·            ⋅            </span>
+<span style="color:rgba(16,185,129,0.10)">     ·          ⋅          </span><span style="color:rgba(212,165,116,0.3)">   ⠷  ⠿  ⢏   ⢹                   </span><span style="color:rgba(59,130,246,0.12)">       °                  ·       </span>
+<span style="color:rgba(249,115,22,0.12)">              ·            </span><span style="color:rgba(212,165,116,0.45)">  ⣿  ⢷  ⣾   ⢶                    </span><span style="color:rgba(251,191,36,0.10)">         ·         ✧              </span>
+<span style="color:rgba(6,182,212,0.15)">   ✦         °            </span><span style="color:rgba(212,165,116,0.55)">   ⣿  ⣿  ⣿  ⣿  ⣿                   </span><span style="color:rgba(139,92,246,0.10)">          ⋅              ·       </span>
+<span style="color:rgba(236,72,153,0.10)">          ·               </span><span style="color:rgba(212,165,116,0.65)">   ⣿  ⣿  ⣿   ⣿  ⣿  ⣿                </span><span style="color:rgba(16,185,129,0.12)">          ·        °             </span>
+<span style="color:rgba(59,130,246,0.10)">              ⋅           </span><span style="color:rgba(212,165,116,0.7)">    ⣿  ⣿  ⣿  ⣿  ⣿  ⣿                 </span><span style="color:rgba(249,115,22,0.10)">     ✧          ·               </span>
+<span style="color:rgba(251,191,36,0.12)">   ·          ·           </span><span style="color:rgba(212,165,116,0.75)">    ⣿  ⣿  ⣿  ⣿  ⣿  ⣿  ⣿               </span><span style="color:rgba(6,182,212,0.12)">           °                    </span>
+<span style="color:rgba(139,92,246,0.10)">         °                </span><span style="color:rgba(212,165,116,0.75)">    ⣿  ⣿  ⣿  ⣿  ⣿  ⣿  ⣿               </span><span style="color:rgba(236,72,153,0.10)">      ·           ⋅             </span>
+<span style="color:rgba(16,185,129,0.12)">              ·           </span><span style="color:rgba(212,165,116,0.7)">     ⣿  ⣿  ⣿  ⣿  ⣿  ⣿                </span><span style="color:rgba(59,130,246,0.10)">           ·      °             </span>
+<span style="color:rgba(6,182,212,0.10)">   ⋅                      </span><span style="color:rgba(212,165,116,0.65)">    ⣿  ⣿  ⣿  ⣿  ⣿  ⣿                </span><span style="color:rgba(251,191,36,0.12)">    ·             ✦             </span>
+<span style="color:rgba(249,115,22,0.10)">          ✧               </span><span style="color:rgba(212,165,116,0.55)">     ⣿  ⣿  ⣿  ⣿  ⣿                  </span><span style="color:rgba(139,92,246,0.12)">         ⋅        ·             </span>
+<span style="color:rgba(236,72,153,0.08)">              ·           </span><span style="color:rgba(212,165,116,0.45)">   ⣿  ⢷  ⣾   ⢶                    </span><span style="color:rgba(16,185,129,0.10)">              °                 </span>
+<span style="color:rgba(59,130,246,0.12)">   ·          °           </span><span style="color:rgba(212,165,116,0.3)">    ⠷  ⠿  ⢏   ⢹                   </span><span style="color:rgba(6,182,212,0.10)">     ·                  ⋅       </span>
+<span style="color:rgba(251,191,36,0.10)">              ⋅            </span><span style="color:rgba(212,165,116,0.2)">   ⠓ ⠚  ⠙  ⠛                 </span><span style="color:rgba(249,115,22,0.12)">        ✧         ·             </span>
+<span style="color:rgba(139,92,246,0.12)">          ·                  </span><span style="color:rgba(212,165,116,0.12)">    ⠈  ⠐  ⠠               </span><span style="color:rgba(236,72,153,0.08)">              ·         °        </span>
+<span style="color:rgba(16,185,129,0.10)">                 ✦                       ·              ⋅            ·                          </span>
+<span style="color:rgba(6,182,212,0.08)">          ⋅            ·              °                        ·              ✧                  </span>
+<span style="color:rgba(59,130,246,0.10)">   °              ·                  ⋅         ·            ·               ·            ⋅       </span>
+<span style="color:rgba(251,191,36,0.08)">                ·              ✧                  ·               °            ·                 </span>
+<span style="color:rgba(249,115,22,0.10)">          °            ⋅                 ·                ✦                     ·                </span>
+<span style="color:rgba(139,92,246,0.08)">                  ·                          °         ·            ⋅              ·              </span>
+<span style="color:rgba(6,182,212,0.10)">       ·            ✧              ·                  ·            °                    ⋅        </span>
+  </div>
+
+  <!-- Main content -->
+  <div class="content">
+    <div class="mascot-line">
+      <span class="mascot-eye">·</span><span class="mascot-core">⣿</span><span class="mascot-eye">·</span>
+    </div>
+    <div class="logo-text">aigentry</div>
+    <div class="tagline">Sovereign Brain OS</div>
+    <div class="divider"></div>
+    <div class="products">
+      <div class="product">
+        <div class="product-dot dot-brain"></div>
+        <span class="product-name">brain</span>
+      </div>
+      <div class="product">
+        <div class="product-dot dot-delib"></div>
+        <span class="product-name">deliberation</span>
+      </div>
+      <div class="product">
+        <div class="product-dot dot-reg"></div>
+        <span class="product-name">registry</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-accent"></div>
+</div>
+</body>
+</html>

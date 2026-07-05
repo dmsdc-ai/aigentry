@@ -1,6 +1,6 @@
 {
   "name": "@dmsdc-ai/aigentry",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sovereign Brain OS for AI Agents — meta package that installs the entire aigentry ecosystem",
   "bin": {
     "aigentry": "bin/aigentry.js"
@@ -12,7 +12,15 @@
     "@dmsdc-ai/aigentry-brain": "^0.2.8",
     "@dmsdc-ai/aigentry-deliberation": "^0.0.47"
   },
-  "keywords": ["aigentry", "ai-agent", "mcp", "brain", "deliberation", "telepty", "aterm"],
+  "keywords": [
+    "aigentry",
+    "ai-agent",
+    "mcp",
+    "brain",
+    "deliberation",
+    "telepty",
+    "aterm"
+  ],
   "author": "dmsdc-ai",
   "license": "MIT",
   "repository": {

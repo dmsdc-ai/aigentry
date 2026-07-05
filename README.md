@@ -2,72 +2,84 @@
 
 # aigentry
 
-**Sovereign Brain OS for AI Agents**
+**One command installs the entire aigentry ecosystem** — terminal, cross-session transport, persistent memory, and multi-AI deliberation for AI agents.
 
-The open ecosystem where AI agents evolve, deliberate, and remember.
-
+[![npm](https://img.shields.io/npm/v/@dmsdc-ai/aigentry?style=flat-square&color=d4a574)](https://www.npmjs.com/package/@dmsdc-ai/aigentry)
 [![License: MIT](https://img.shields.io/badge/License-MIT-d4a574?style=flat-square)](LICENSE)
-[![brain](https://img.shields.io/badge/brain-MCP_Server-06b6d4?style=flat-square)](https://github.com/aigentry/aigentry-brain)
-[![deliberation](https://img.shields.io/badge/deliberation-Multi_AI_Debate-8b5cf6?style=flat-square)](https://github.com/aigentry/aigentry-deliberation)
-[![registry](https://img.shields.io/badge/registry-Agent_Evolution-ec4899?style=flat-square)](https://github.com/aigentry/aigentry-registry)
 
 </div>
 
 ---
+
+## Install
+
+One command installs the entire ecosystem:
+
+```bash
+npm i -g @dmsdc-ai/aigentry
+```
+
+## Ecosystem
+
+| Module | Package | Description |
+|--------|---------|-------------|
+| **aterm** | `@dmsdc-ai/aterm` | Terminal UI for AI agents |
+| **telepty** | `@dmsdc-ai/aigentry-telepty` | Session transport + inter-session communication |
+| **devkit** | `@dmsdc-ai/aigentry-devkit` | Installer, orchestrator, and CLI tooling |
+| **brain** | `@dmsdc-ai/aigentry-brain` | Persistent structured memory (MCP server) |
+| **deliberation** | `@dmsdc-ai/aigentry-deliberation` | Multi-AI structured debate (MCP server) |
+
+## Usage
+
+```bash
+# Check ecosystem status
+aigentry status
+
+# Show version
+aigentry version
+
+# Show help
+aigentry help
+```
 
 ## Architecture
 
 ```mermaid
 graph LR
     subgraph aigentry Ecosystem
-        B[aigentry-brain<br/>Structured Memory MCP]
-        D[aigentry-deliberation<br/>Multi-AI Debate]
-        R[aigentry-registry<br/>Agent Eval & Evolution]
+        A[aterm<br/>Terminal UI]
+        T[telepty<br/>Session Transport]
+        K[devkit<br/>Installer & CLI]
+        B[brain<br/>Structured Memory MCP]
+        D[deliberation<br/>Multi-AI Debate]
     end
 
-    Agent((AI Agent)) --> B
-    Agent --> D
-    Agent --> R
+    Agent((AI Agent)) --> A
+    A --> T
+    T --> B
+    T --> D
+    K -->|provisions| A
+    K -->|provisions| T
+    K -->|provisions| B
+    K -->|provisions| D
     B -->|memory context| D
-    D -->|consensus| R
-    R -->|evolved agents| B
+    D -->|consensus| B
 
+    style A fill:#f59e0b,stroke:#d97706,color:#000
+    style T fill:#10b981,stroke:#059669,color:#000
+    style K fill:#d4a574,stroke:#b8956a,color:#000
     style B fill:#06b6d4,stroke:#0891b2,color:#000
     style D fill:#8b5cf6,stroke:#7c3aed,color:#fff
-    style R fill:#ec4899,stroke:#db2777,color:#fff
-    style Agent fill:#d4a574,stroke:#b8956a,color:#000
+    style Agent fill:#ef4444,stroke:#dc2626,color:#fff
 ```
 
-## Ecosystem
+## What this is
 
-| Project | Description | Status |
-|---------|-------------|--------|
-| [aigentry-brain](https://github.com/aigentry/aigentry-brain) | Structured memory MCP server. Persistent, queryable memory for AI agents. | Active |
-| [aigentry-deliberation](https://github.com/aigentry/aigentry-deliberation) | Multi-AI deliberation framework. Structured debates between Claude, Codex, Gemini, and more. | Active |
-| [aigentry-registry](https://github.com/aigentry/aigentry-registry) | Agent evaluation and evolution platform. Track, compare, and evolve AI agents. | Active |
+aigentry is a meta-package. `npm i -g @dmsdc-ai/aigentry` installs and version-checks the whole stack — [aterm](https://github.com/dmsdc-ai/aterm), [telepty](https://github.com/dmsdc-ai/aigentry-telepty), [devkit](https://github.com/dmsdc-ai/aigentry-devkit), [brain](https://github.com/dmsdc-ai/aigentry-brain), and [deliberation](https://github.com/dmsdc-ai/aigentry-deliberation) — behind one CLI. Each module is independently useful and separately published; this package just wires them together and reports status via `aigentry status`.
 
-## Vision
-
-aigentry is building the infrastructure layer for autonomous AI agents:
-
-- **Remember** — Structured, persistent memory that survives across sessions
-- **Deliberate** — Multi-model debates that surface better decisions
-- **Evolve** — Continuous evaluation and improvement of agent capabilities
-
-The goal: AI agents that are not disposable prompt-followers, but sovereign entities with memory, judgment, and growth.
-
-## Quick Start
-
-```bash
-# Install aigentry-brain (MCP server)
-npx aigentry-brain
-
-# Start a multi-AI deliberation
-npx aigentry-deliberation start --topic "System design review"
-
-# Launch the registry
-cd aigentry-registry && npm run dev
-```
+- **Remember** — persistent structured memory across sessions (brain)
+- **Deliberate** — multi-model debate before deciding (deliberation)
+- **Connect** — cross-session, cross-machine transport (telepty)
 
 ## Brand Assets
 

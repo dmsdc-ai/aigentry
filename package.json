@@ -5,6 +5,9 @@
   "bin": {
     "aigentry": "bin/aigentry.js"
   },
+  "scripts": {
+    "prepublishOnly": "node scripts/gen-readme.mjs"
+  },
   "dependencies": {
     "@dmsdc-ai/aterm": "^0.2.14",
     "@dmsdc-ai/aigentry-telepty": "^0.6.6",

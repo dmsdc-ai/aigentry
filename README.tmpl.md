@@ -61,16 +61,7 @@ Other hub commands: `aigentry version`, `aigentry help`. You don't have to insta
   devkit — installs the dev environment (skills · hooks · MCP · HUD/statusline)
 ```
 
-| Module | Package | Version | Role | Maturity |
-| --- | --- | --- | --- | --- |
-| **telepty** | `@dmsdc-ai/aigentry-telepty` | 0.6.9 | Cross-terminal / cross-machine prompt transport (PTY daemon) | Shipping |
-| **brain** | `@dmsdc-ai/aigentry-brain` | 0.2.8 | Persistent cross-session memory (MCP server) | Early |
-| **deliberation** | `@dmsdc-ai/aigentry-deliberation` | 0.0.47 | Multi-AI structured debate + synthesis (MCP server) | Early |
-| **devkit** | `@dmsdc-ai/aigentry-devkit` | 0.0.22 | Installer/scaffold for the AI dev environment | Early |
-| **aterm** | `@dmsdc-ai/aterm` | 0.2.14 | Terminal launcher with native session IPC | Early |
-| **orchestrator** | *(unpublished)* | — | Control tower that drives sessions via telepty | Internal |
-
-> Licenses: all MIT except `@dmsdc-ai/aterm` (UNLICENSED).
+{{ecosystem_table}}
 
 How they relate: the **orchestrator** drives terminal sessions by pushing prompts through **telepty**, which transports them across machines; **deliberation** arbitrates when multiple sessions need to agree; **brain** carries memory across resets; **devkit** installs and configures the whole thing; **aterm** is one of the terminals sessions can run in.
 

@@ -8,8 +8,8 @@
   "dependencies": {
     "@dmsdc-ai/aterm": "^0.2.14",
     "@dmsdc-ai/aigentry-telepty": "^0.6.6",
-    "@dmsdc-ai/aigentry-devkit": "^0.0.21",
-    "@dmsdc-ai/aigentry-brain": "^0.2.7",
+    "@dmsdc-ai/aigentry-devkit": "^0.0.22",
+    "@dmsdc-ai/aigentry-brain": "^0.2.8",
     "@dmsdc-ai/aigentry-deliberation": "^0.0.47"
   },
   "keywords": ["aigentry", "ai-agent", "mcp", "brain", "deliberation", "telepty", "aterm"],

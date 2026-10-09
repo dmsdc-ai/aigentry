@@ -955,3 +955,60 @@ describe('R3: the win32 scheduled task is never attributed to a non-default port
     assert.doesNotMatch(logText(fx), /stop-initiated/);
   });
 });
+
+// ── N14 (FINAL-REVIEW-R3): a systemd port assignment the reader cannot prove is unknown, never 3848 ──
+// Synthetic --user units only (no systemd). Every run has a known authenticated /api/meta identity on the
+// addressed port, so only the supervisor decision can refuse. 3848 must not start/restart a unit that may
+// serve 4000; --port 4000 must not bypass a unit that may own 4000 (#738). Refusal = before any action/lease/log.
+describe('N14: a systemd port assignment the reader cannot prove never defaults to 3848', () => {
+  const userUnit = (fx) => path.join(fx.home, '.config', 'systemd', 'user', 'telepty.service');
+  const unitWith = (service) => `[Unit]\nDescription=telepty daemon\n\n[Service]\n${service}\nRestart=always\n\n[Install]\nWantedBy=default.target\n`;
+  const EXEC = 'ExecStart=/usr/bin/node /usr/lib/node_modules/@dmsdc-ai/aigentry-telepty/daemon.js';
+  const EXEC_ENV_4000 = 'ExecStart=/usr/bin/env TELEPTY_PORT=4000 node d.js';
+  const runs = [
+    ['start 3848', { platform: 'linux' }, ['start', 'telepty']],
+    ['restart 3848', { platform: 'linux', up: true }, ['restart', 'telepty', '--yes']],
+    ['start --port 4000', { platform: 'linux', port: 4000 }, ['start', 'telepty', '--port', '4000']],
+    ['restart --port 4000', { platform: 'linux', port: 4000, up: true }, ['restart', 'telepty', '--port', '4000', '--yes']],
+  ];
+  // One fresh fixture per run, so a lease or log line from one run cannot hide another's.
+  async function observe(t, service, rtOpts, argv) {
+    const fx = setup(t);
+    H.write(userUnit(fx), unitWith(service));
+    const leaseAtAction = [];
+    const h = world(fx, { ...rtOpts, onAction: () => { leaseAtAction.push(fs.existsSync(fx.lease)); return null; } });
+    const code = await h.run(argv);
+    return { code, actions: actions(h), leaseAtAction, leaseLeft: fs.existsSync(fx.lease), stopInitiated: /stop-initiated/.test(logText(fx)) };
+  }
+  const REFUSED = { code: 1, actions: [], leaseAtAction: [], leaseLeft: false, stopInitiated: false };
+
+  const unproven = {
+    "Environment='TELEPTY_PORT=4000'": `${EXEC}\nEnvironment='TELEPTY_PORT=4000'`,
+    "Environment=A=1 'TELEPTY_PORT=4000'": `${EXEC}\nEnvironment=A=1 'TELEPTY_PORT=4000'`,
+    "Environment='PORT=4000'": `${EXEC}\nEnvironment='PORT=4000'`,
+    'ExecStart=/usr/bin/env TELEPTY_PORT=4000 node d.js': EXEC_ENV_4000,
+    'canonical Environment=PORT=3848 + ExecStart env TELEPTY_PORT=4000': `${EXEC_ENV_4000}\nEnvironment=PORT=3848`,
+    "canonical Environment=TELEPTY_PORT=3848 overwritten by Environment='TELEPTY_PORT=4000'": `${EXEC}\nEnvironment=TELEPTY_PORT=3848\nEnvironment='TELEPTY_PORT=4000'`,
+  };
+  for (const [form, service] of Object.entries(unproven)) {
+    it(`${form}: start/restart on 3848 and --port 4000 → 1 before any action, lease or stop-initiated`, async (t) => {
+      const seen = {};
+      for (const [label, rtOpts, argv] of runs) seen[label] = await observe(t, service, rtOpts, argv);
+      assert.deepEqual(seen, Object.fromEntries(runs.map(([label]) => [label, REFUSED])));
+    });
+  }
+
+  // Guards (green before and after a fix): an unambiguous unit keeps its exact port; comments are not assignments.
+  it('guard: canonical Environment=TELEPTY_PORT=4000 → --port 4000 uses systemd, 3848 restarts its own daemon', async (t) => {
+    const service = `${EXEC}\nEnvironment=TELEPTY_PORT=4000`;
+    assert.deepEqual((await observe(t, service, runs[2][1], runs[2][2])).actions, ['systemctl --user start telepty']);
+    assert.deepEqual((await observe(t, service, runs[3][1], runs[3][2])).actions, ['systemctl --user restart telepty']);
+    assert.deepEqual((await observe(t, service, runs[1][1], runs[1][2])).actions, ['node <cli> daemon restart']);
+  });
+
+  it('guard: port text only in comments is no assignment → the unit serves 3848 (systemctl --user start)', async (t) => {
+    const service = `${EXEC}\n# Environment='TELEPTY_PORT=4000'\n; Environment=PORT=4000\n#ExecStart=/usr/bin/env TELEPTY_PORT=4000 node d.js`;
+    const r = await observe(t, service, runs[0][1], runs[0][2]);
+    assert.deepEqual([r.code, r.actions], [0, ['systemctl --user start telepty']]);
+  });
+});

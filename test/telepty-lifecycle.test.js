@@ -704,3 +704,254 @@ describe('R2: lifecycle never executes an incompatible telepty (B5)', () => {
     }
   });
 });
+
+// ── R3 regressions (controller R3 contracts after tester finding F-A) ─────────────────────────────
+// 1. Only a canonical `Date#toISOString()` startedAt is authoritative; every other value is undatable
+//    and falls back to the file mtime. 2. restart needs a known authenticated same-port /api/meta pid
+//    BEFORE any action or stop-initiated line. 3. A systemd unit with an unhandled port source
+//    (EnvironmentFile=, a drop-in) never silently defaults to 3848.
+
+describe('R3: only a canonical toISOString startedAt dates a lease; anything else uses the mtime (F-A)', () => {
+  const STALE_MS = 2 * TTL_MS;
+  // Each value would say "stale" if it were trusted; the file itself is written now (fresh mtime).
+  const undatable = {
+    'numeric epoch-seconds': (h) => Math.floor(h.clock / 1000),
+    'numeric 0': () => 0,
+    'numeric epoch-ms (stale)': (h) => h.clock - STALE_MS,
+    'lenient string "5"': () => '5',
+    'lenient string "garbage 12"': () => 'garbage 12',
+    'non-canonical ISO without milliseconds (stale)': (h) => new Date(h.clock - STALE_MS).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    'non-canonical ISO with +00:00 offset (stale)': (h) => new Date(h.clock - STALE_MS).toISOString().replace(/Z$/, '+00:00'),
+    'date-only string (stale)': (h) => new Date(h.clock - STALE_MS).toISOString().slice(0, 10),
+    'Date#toString form (stale)': (h) => new Date(h.clock - STALE_MS).toString(),
+    'ISO shape that does not round-trip (Feb 31)': () => '2020-02-31T00:00:00.000Z',
+  };
+  const bodyWith = (startedAt) => JSON.stringify({ pid: 999999, ppid: 999998, port: 3848, verdict: 'aigentry-explicit', startedAt });
+
+  for (const [label, make] of Object.entries(undatable)) {
+    it(`fresh foreign lease with ${label} startedAt is held: 1, bytes preserved, no stop-initiated, nothing run`, async (t) => {
+      const fx = setup(t);
+      const h = world(fx, { up: true });
+      const body = bodyWith(make(h));
+      H.write(fx.lease, body);
+      assert.equal(await h.run(['restart', 'telepty', '--yes']), 1);
+      assert.equal(fs.readFileSync(fx.lease, 'utf8'), body, 'fresh foreign lease bytes preserved');
+      assert.doesNotMatch(logText(fx), /stop-initiated/);
+      assert.deepEqual(actions(h), []);
+    });
+  }
+
+  for (const label of ['numeric epoch-seconds', 'lenient string "5"', 'numeric epoch-ms (stale)']) {
+    it(`the same ${label} lease with a genuinely stale mtime is reclaimed`, async (t) => {
+      const fx = setup(t);
+      let during = null;
+      const h = world(fx, { up: true, onAction: () => { during = JSON.parse(fs.readFileSync(fx.lease, 'utf8')); return null; } });
+      H.write(fx.lease, bodyWith(undatable[label](h)));
+      const old = new Date(h.clock - STALE_MS);
+      fs.utimesSync(fx.lease, old, old);
+      assert.equal(await h.run(['restart', 'telepty', '--yes']), 0);
+      assert.equal(during && during.pid, 4242, 'our lease replaced the stale one');
+      assert.equal(fs.existsSync(fx.lease), false);
+    });
+  }
+
+  it('a canonical ISO startedAt stays authoritative: stale ISO with a fresh mtime is reclaimed', async (t) => {
+    const fx = setup(t);
+    const h = world(fx, { up: true });
+    H.write(fx.lease, bodyWith(new Date(h.clock - STALE_MS).toISOString()));
+    assert.equal(await h.run(['restart', 'telepty', '--yes']), 0);
+    assert.equal(fs.existsSync(fx.lease), false);
+  });
+
+  it('a canonical ISO startedAt stays authoritative: future ISO is held even with a stale mtime', async (t) => {
+    const fx = setup(t);
+    const h = world(fx, { up: true });
+    const body = bodyWith(new Date(h.clock + 365 * 24 * 3600 * 1000).toISOString());
+    H.write(fx.lease, body);
+    const old = new Date(h.clock - STALE_MS);
+    fs.utimesSync(fx.lease, old, old);
+    assert.equal(await h.run(['restart', 'telepty', '--yes']), 1);
+    assert.equal(fs.readFileSync(fx.lease, 'utf8'), body);
+    assert.deepEqual(actions(h), []);
+  });
+});
+
+describe('R3: restart needs a known authenticated same-port /api/meta pid before any action', () => {
+  const noAction = (h, fx) => {
+    assert.deepEqual(actions(h), [], 'no restart action without a known daemon identity');
+    assert.doesNotMatch(logText(fx), /stop-initiated/);
+    assert.equal(fs.existsSync(fx.lease), false, 'no lease left behind');
+  };
+  const metaCases = [
+    ['/api/meta 401', H.P.answered(401)],
+    ['/api/meta 403', H.P.answered(403)],
+    ['/api/meta timeout', H.P.timeout()],
+    ['/api/meta malformed', H.P.malformed()],
+    ['/api/meta error ECONNRESET', H.P.error()],
+    ['/api/meta without a version', H.P.ok({ name: 'telepty', pid: 100, port: 3848 })],
+    ['/api/meta for another port', H.P.ok({ name: 'telepty', version: '0.8.5', pid: 100, port: 4000 })],
+    ['/api/meta without a pid', H.P.ok({ name: 'telepty', version: '0.8.5', port: 3848 })],
+    ['/api/meta with pid null', H.P.ok({ name: 'telepty', version: '0.8.5', pid: null, port: 3848 })],
+    ['/api/meta with a non-integer pid', H.P.ok({ name: 'telepty', version: '0.8.5', pid: '100', port: 3848 })],
+  ];
+  for (const [label, probe] of metaCases) {
+    it(`${label} → nonzero, nothing run, no stop-initiated (--yes does not override unknown identity)`, async (t) => {
+      const fx = setup(t);
+      const h = world(fx, { up: true });
+      h.state.metaOverride = probe;
+      assert.notEqual(await h.run(['restart', 'telepty', '--yes']), 0);
+      noAction(h, fx);
+    });
+  }
+
+  for (const [label, cfg] of [['no ~/.telepty/config.json', null], ['config without authToken', {}]]) {
+    it(`missing token (${label}) → nonzero, nothing run, no stop-initiated`, async (t) => {
+      const fx = setup(t, { token: false });
+      if (cfg) H.writeTeleptyConfig(fx, cfg);
+      H.writeDaemonState(fx, { pid: 100, port: 3848 });
+      const h = world(fx, { up: true });
+      assert.notEqual(await h.run(['restart', 'telepty', '--yes']), 0);
+      noAction(h, fx);
+    });
+  }
+
+  it('a supervised (launchd) restart also needs the identity first', async (t) => {
+    const fx = setup(t, { launchd: 3848 });
+    const h = world(fx, { up: true });
+    h.state.metaOverride = H.P.timeout();
+    assert.notEqual(await h.run(['restart', 'telepty', '--yes']), 0);
+    noAction(h, fx);
+  });
+
+  it('an interactive "y" does not override an unknown identity', async (t) => {
+    const fx = setup(t);
+    const h = world(fx, { up: true, tty: true, prompt: 'y' });
+    h.state.metaOverride = H.P.answered(401);
+    assert.notEqual(await h.run(['restart', 'telepty']), 0);
+    noAction(h, fx);
+  });
+
+  it('a session listing (even with owner pids) never supplies the identity', async (t) => {
+    const fx = setup(t);
+    const h = world(fx, { up: true, sessions: H.P.ok([{ id: 's-1', type: 'spawned', healthStatus: 'CONNECTED', ownerPid: 100 }]) });
+    h.state.metaOverride = H.P.answered(401);
+    assert.notEqual(await h.run(['restart', 'telepty', '--yes']), 0);
+    noAction(h, fx);
+  });
+
+  it('known identity + failing session listing: warns that sessions end, --yes proceeds → 0', async (t) => {
+    const fx = setup(t);
+    const h = world(fx, { up: true, sessions: H.P.timeout() });
+    assert.equal(await h.run(['restart', 'telepty', '--yes']), 0);
+    assert.match(h.all(), /END/);
+    assert.deepEqual(actions(h), ['node <cli> daemon restart']);
+  });
+});
+
+describe('R3: an unhandled systemd port source never defaults to 3848', () => {
+  const userUnit = (fx) => path.join(fx.home, '.config', 'systemd', 'user', 'telepty.service');
+  const envFileUnit = (line) => `[Unit]\nDescription=telepty daemon\n\n[Service]\nExecStart=/usr/bin/node /usr/lib/node_modules/@dmsdc-ai/aigentry-telepty/daemon.js\n${line}\nRestart=always\n\n[Install]\nWantedBy=default.target\n`;
+  const scenarios = (fx) => [
+    ['start', world(fx, { platform: 'linux' }), ['start', 'telepty']],
+    ['restart', world(fx, { platform: 'linux', up: true }), ['restart', 'telepty', '--yes']],
+  ];
+
+  for (const line of ['EnvironmentFile=%h/.config/telepty/env', 'EnvironmentFile=-/etc/default/telepty']) {
+    it(`systemd --user unit with "${line}" and no port line: start and restart → 1, nothing run`, async (t) => {
+      const fx = setup(t);
+      H.write(userUnit(fx), envFileUnit(line));
+      for (const [verb, h, argv] of scenarios(fx)) {
+        assert.equal(await h.run(argv), 1, `${verb}: port source unknown`);
+        assert.deepEqual(actions(h), [], `${verb}: nothing run`);
+        assert.equal(fs.existsSync(fx.lease), false);
+      }
+    });
+  }
+
+  // Controller R3 tightening: systemd applies EnvironmentFile= after Environment=, so ANY EnvironmentFile is unknown.
+  it('EnvironmentFile= together with an explicit Environment=TELEPTY_PORT=3848: start and restart → 1, nothing run', async (t) => {
+    const fx = setup(t);
+    H.write(userUnit(fx), envFileUnit('Environment=TELEPTY_PORT=3848\nEnvironmentFile=%h/.config/telepty/env'));
+    for (const [verb, h, argv] of scenarios(fx)) {
+      assert.equal(await h.run(argv), 1, `${verb}: the EnvironmentFile may override the port`);
+      assert.deepEqual(actions(h), [], `${verb}: nothing run`);
+      assert.equal(fs.existsSync(fx.lease), false);
+    }
+  });
+
+  it('doctor does not report an EnvironmentFile unit as serving 3848', async (t) => {
+    const fx = setup(t);
+    H.write(userUnit(fx), envFileUnit('EnvironmentFile=%h/.config/telepty/env'));
+    const h = world(fx, { platform: 'linux', up: true });
+    await h.run(['doctor', '--json']);
+    const ch = H.checkById(H.parseOneJson(h.stdout()), 'telepty.supervisor');
+    assert.notEqual(ch.state, 'ok', JSON.stringify(ch));
+    assert.doesNotMatch(String(ch.detail), /serves port 3848/);
+  });
+
+  // Proposed bounded drop-in rule: <unitFile>.d nonempty or unreadable → port unknown; absent/empty → as before.
+  it('a nonempty drop-in directory <unitFile>.d → start and restart 1, nothing run', async (t) => {
+    const fx = setup(t, { systemdUser: 3848 });
+    H.write(path.join(`${userUnit(fx)}.d`, 'override.conf'), '[Service]\nEnvironment=TELEPTY_PORT=4000\n');
+    for (const [verb, h, argv] of scenarios(fx)) {
+      assert.equal(await h.run(argv), 1, `${verb}: drop-in not parsed`);
+      assert.deepEqual(actions(h), [], `${verb}: nothing run`);
+    }
+  });
+
+  it('an unreadable drop-in directory <unitFile>.d → start and restart 1, nothing run', { skip: POSIX_ONLY || (IS_ROOT && 'root ignores file modes') }, async (t) => {
+    const fx = setup(t, { systemdUser: 3848 });
+    const dropIn = `${userUnit(fx)}.d`;
+    H.write(path.join(dropIn, 'override.conf'), '[Service]\nEnvironment=TELEPTY_PORT=4000\n');
+    fs.chmodSync(dropIn, 0o000);
+    try {
+      for (const [verb, h, argv] of scenarios(fx)) {
+        assert.equal(await h.run(argv), 1, `${verb}: drop-in unreadable`);
+        assert.deepEqual(actions(h), [], `${verb}: nothing run`);
+      }
+    } finally {
+      fs.chmodSync(dropIn, 0o755);
+    }
+  });
+
+  it('an empty drop-in directory keeps the unit\'s own port (guard): systemctl --user start telepty', async (t) => {
+    const fx = setup(t, { systemdUser: 3848 });
+    fs.mkdirSync(`${userUnit(fx)}.d`, { recursive: true });
+    const h = world(fx, { platform: 'linux' });
+    assert.equal(await h.run(['start', 'telepty']), 0);
+    assert.deepEqual(actions(h), ['systemctl --user start telepty']);
+  });
+});
+
+// ── R3 (REVIEW-R2 R2-B1): the win32 scheduled task names no port; it is attributed to 3848 only ──────
+// (telepty's documented fallback, an upstream-contract assumption). Any other addressed port → unknown:
+// refuse with no lifecycle action and no lease. Simulated win32 only; `schtasks /query` is detection, not action.
+describe('R3: the win32 scheduled task is never attributed to a non-default port (R2-B1)', () => {
+  const SCHTASKS_FOUND = 'Folder: \\\r\nHostName:      PC\r\nTaskName:      \\telepty-daemon\r\nNext Run Time: N/A\r\nStatus:        Ready\r\n';
+  // The task starts its own (default-port) daemon: /run never brings up the addressed 4000 daemon.
+  const taskPresent = (c) => {
+    if (H.base(c.cmd) !== 'schtasks') return null;
+    if (c.args.includes('/query')) return { status: 0, stdout: SCHTASKS_FOUND };
+    if (c.args.includes('/run')) return { status: 0 };
+    return null;
+  };
+  const lifecycleActions = (h) => h.state.actions
+    .filter((c) => !(H.base(c.cmd) === 'schtasks' && c.args.includes('/query')))
+    .map((c) => `${H.base(c.cmd) === H.base(H.FAKE_NODE) ? 'node' : H.base(c.cmd)} ${c.args.map((a) => (a.endsWith('cli.js') ? '<cli>' : a)).join(' ')}`);
+
+  it('task present, nothing on 4000: start telepty --port 4000 → 1, no schtasks /run, no daemon start', async (t) => {
+    const fx = setup(t);
+    const h = world(fx, { platform: 'win32', port: 4000, onAction: taskPresent });
+    assert.equal(await h.run(['start', 'telepty', '--port', '4000']), 1);
+    assert.deepEqual(lifecycleActions(h), [], 'only detection ran');
+  });
+
+  it('task present, daemon up on 4000: restart telepty --port 4000 --yes → 1, nothing stopped or run, no lease, no stop-initiated', async (t) => {
+    const fx = setup(t);
+    const h = world(fx, { platform: 'win32', port: 4000, up: true, onAction: taskPresent });
+    assert.equal(await h.run(['restart', 'telepty', '--port', '4000', '--yes']), 1);
+    assert.deepEqual(lifecycleActions(h), [], 'the 4000 daemon is never stopped');
+    assert.equal(fs.existsSync(fx.lease), false);
+    assert.doesNotMatch(logText(fx), /stop-initiated/);
+  });
+});

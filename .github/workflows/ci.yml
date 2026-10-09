@@ -1,0 +1,43 @@
+name: ci
+
+# Contract tests for the unified CLI. No npm install: the tests use Node built-ins and fixtures only.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['20.11.0', '22']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # bash expands the glob on every OS (Node 20 `--test` does not take glob patterns), so every
+      # test/*.test.js file runs; an empty glob fails instead of silently passing.
+      - name: Contract tests
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(test/*.test.js)
+          if [ ${#files[@]} -eq 0 ]; then echo "no test files matched test/*.test.js"; exit 1; fi
+          node --test "${files[@]}"
+
+  readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: README is generated from README.tmpl.md + ecosystem.json
+        run: node scripts/gen-readme.mjs --check

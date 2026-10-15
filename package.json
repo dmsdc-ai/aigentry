@@ -1,18 +1,22 @@
 {
   "name": "@dmsdc-ai/aigentry",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Sovereign Brain OS for AI Agents — meta package that installs the entire aigentry ecosystem",
   "bin": {
     "aigentry": "bin/aigentry.js"
   },
+  "files": [
+    "bin/",
+    "lib/"
+  ],
   "scripts": {
     "prepublishOnly": "node scripts/gen-readme.mjs"
   },
   "dependencies": {
     "@dmsdc-ai/aterm": "^0.2.14",
-    "@dmsdc-ai/aigentry-telepty": "^0.6.6",
-    "@dmsdc-ai/aigentry-devkit": "^0.0.22",
-    "@dmsdc-ai/aigentry-brain": "^0.2.8",
+    "@dmsdc-ai/aigentry-telepty": "^0.8.5",
+    "@dmsdc-ai/aigentry-devkit": "^0.1.14",
+    "@dmsdc-ai/aigentry-brain": "^0.3.1",
     "@dmsdc-ai/aigentry-deliberation": "^0.0.47"
   },
   "keywords": [
@@ -32,6 +36,6 @@
   },
   "homepage": "https://github.com/dmsdc-ai/aigentry",
   "engines": {
-    "node": ">=18"
+    "node": ">=20.11.0"
   }
 }

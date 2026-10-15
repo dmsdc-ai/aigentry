@@ -15,29 +15,56 @@
 
 ## Quickstart
 
+> **CLI version scope.** Version 0.2.0 includes the `doctor`, `start`, `restart` and component commands below. Older versions may offer only `status`, `version` and `help`. Check available npm registry versions to determine whether 0.2.0 can be installed.
+
 ```bash
-# Install the whole ecosystem
+# Install the hub (Node.js >= 20.11.0)
 npm i -g @dmsdc-ai/aigentry
 
-# Check what's installed
-aigentry status
+aigentry status              # what's installed, where it resolves from, telepty service state
+aigentry doctor              # health checks: exit 0 ok · 1 required check failed · 7 inconclusive
+aigentry doctor --timeout 3000   # the same, finishing within one 3-second budget
+aigentry doctor --json       # the same, as one JSON document on stdout
+aigentry start               # start telepty if it isn't running (= aigentry start telepty)
+aigentry restart telepty     # restart the daemon; lists sessions that won't survive and asks first
+aigentry help                # commands and components
+aigentry telepty list        # run a component's own CLI through the hub
+aigentry devkit              # no arguments: prints help for devkit, runs nothing
 ```
 
-`aigentry status` version-checks each module and prints a table:
+| Command | What it does |
+| --- | --- |
+| `aigentry` · `aigentry status [--json]` | Each module's version, whether it resolves from your `PATH` or the hub's bundled copy, and telepty's service state. Always exits 0. `--json` prints one `aigentry.status/v1` document. |
+| `aigentry doctor [--json] [--timeout <ms>]` | Health checks. Exit **0** = healthy · **1** = a required check failed · **7** = inconclusive (a required check could not be decided, e.g. the daemon did not answer in time). `--timeout` is one budget for the whole run (default 10000 ms, max 60000; each daemon probe gets at most 1500 ms of it). `--json` prints exactly one JSON document (`aigentry.doctor/v1`) on stdout. |
+| `aigentry start [telepty] [--port <n>]` | `telepty` is the default. Already running → exit 0. If telepty's service supervisor is installed for that port, the hub asks it to start the daemon (for a root systemd unit it only prints the `sudo` command); otherwise it runs telepty's own `telepty daemon start`. Then it waits for the daemon's health check. If a supervisor is installed but the port it serves cannot be determined (see **Supervisor ports** below), it starts nothing and exits 1. |
+| `aigentry restart telepty [--port <n>] [--yes]` | Restarts the daemon. Sessions made with `telepty spawn` die with it (wrapped `telepty allow` sessions survive), so it lists those first and asks for confirmation — pass `--yes` when there is no terminal to ask in. Refused inside an agent session (advisory), when the daemon's state is unknown, when the supervisor's port is unknown, when telepty's restart lease is held or unreadable, and when the running daemon cannot be identified by its authenticated `/api/meta` on that port (no token, token refused, no or malformed answer, another port, no pid) — `--yes` or answering `y` does not override this. A refusal makes no lifecycle change; a read-only supervisor query may run (exit 4 inside an agent session, or when the restart is not confirmed: no terminal and no `--yes`, or an answer other than `y`; otherwise 1). Once the restart action has run, it reports success (exit 0) only when `/api/meta` on that port shows a new pid; otherwise it exits 1 (UNCONFIRMED): the daemon may already have been restarted, so exit 1 alone does not mean nothing happened — check `aigentry doctor` before retrying. |
+| `aigentry start orchestrator [--workspace <path>]`<br>`aigentry restart orchestrator [--workspace <path>]` | Runs your control workspace's boot in this terminal — see [Orchestrator launch](#orchestrator-launch-macos--linux). macOS / Linux only. |
+| `aigentry <component> [args…]` | Runs that component's own CLI with your arguments; its exit code is returned unchanged. With **no** arguments it prints help for the component and runs nothing. Components: `telepty`, `orchestrator` (if on `PATH`), `devkit`, `brain`, `deliberation` (`doctor`, `install`), `aterm`, `logger` (if `aigentry-logger` is on `PATH`). |
+| `aigentry version` · `aigentry help [topic]` | Hub version · usage. |
 
-```
-  Module           Version     CLI
-  ───────────────  ──────────  ───────
-  ✓ aterm            v0.2.14     ✓
-  ✓ telepty          v0.6.9      ✓
-  ✓ devkit           v0.0.22     ✓
-  ✓ brain            v0.2.8      —
-  ✓ deliberation     v0.0.47     —
+`restart` always needs an explicit target (`telepty` or `orchestrator`). There is no `stop`, `repair` or `--all` in this version: stop the daemon with `telepty daemon stop` (a launchd/systemd-supervised daemon is brought back by its supervisor). Passthrough has the component's own side effects — e.g. `aigentry brain …` may self-update brain, exactly like `aigentry-brain …`.
 
-  5/5 modules installed
-```
+**Supervisor ports.** `start`/`restart telepty` hand the daemon to its supervisor only when that supervisor's job serves the addressed port; when the port it serves is unknown they refuse and make no lifecycle change; a read-only supervisor query may run. The port is read from the launchd plist or the systemd unit file. A systemd unit with any `EnvironmentFile=` line, or with a nonempty or unreadable `<unit>.d/` drop-in directory next to it, counts as unknown; other systemd configuration locations (for example `/etc/systemd/user/` or `/run/systemd/`) are not inspected. In the unit file the port is read only from `Environment=` lines made of plain or fully double-quoted `NAME=VALUE` words; any unfamiliar or conflicting port form counts as unknown, never as 3848: another line that names `TELEPTY_PORT` or `PORT` (for example `ExecStart=/usr/bin/env TELEPTY_PORT=…`), single-quoted words, any `Environment=` line containing a backslash, an `Environment=` line following an active line continuation, different values for one key, or an empty `Environment=` reset. Comment lines are ignored but do not end a preceding continuation. The Windows scheduled task names no port: like telepty, the hub assumes it serves the default 3848, and it is never used for any other port.
 
-Other hub commands: `aigentry version`, `aigentry help`. You don't have to install everything — **any module can be installed on its own** (see each section below).
+**`status` and `doctor` are passive, local diagnostics.** They read local files and ask the local telepty daemon on `127.0.0.1` for its health. `status` sends **no** telepty token, so it reports the token and orchestrator-session checks as *skipped* (run `aigentry doctor`). `doctor` also checks the daemon's metadata and session list when a telepty token is configured; the token is only sent as a request header, never printed. They start **no** subprocesses: no component commands, no installs, no repairs. `doctor` lists the component doctors (`aigentry deliberation doctor`, `aigentry devkit doctor`, `aigentry brain doctor`) for you to run; it does not run them. On Windows the telepty scheduled task is not queried, so the supervisor may be reported as unknown.
+
+**Versions are checked against this package's own ranges.** `doctor` reports a component whose running copy (the `PATH` copy wins over the bundled one) is outside the range this package declares as a failed required check, an unreadable version as inconclusive, and a `PATH` copy that differs from the bundled copy — or a daemon whose version differs from the CLI — as an advisory. `start`/`restart telepty` never run a telepty CLI outside the supported range.
+
+**Optional or unsupported is not broken.** Only required checks decide `doctor`'s exit code. A stopped telepty daemon is a warning (`aigentry start` fixes it). A running daemon that this machine has no token for is a failure. Absent optional pieces — the orchestrator, its control workspace, aterm (optional everywhere; its app is macOS arm64 only), the logger — are reported as missing or unsupported, not as failures.
+
+### Orchestrator launch (macOS / Linux)
+
+`aigentry start orchestrator` and `aigentry restart orchestrator` run the control workspace's own `bin/orchestrator-boot.sh` as a **foreground child in the terminal you typed them in**, sharing that terminal's stdin/stdout/stderr — the boot wizard needs a human at the keyboard. Before running anything the hub checks:
+
+- the control workspace — `--workspace <path>`, else `$AIGENTRY_CONTROL_WORKSPACE`, else `~/aigentry/_orchestrator` — already exists (create it with `aigentry-orchestrator init`) and contains `bin/orchestrator-boot.sh`;
+- the standalone orchestrator package's `aigentry-orchestrator` command is on your `PATH` — the hub does **not** bundle or install it;
+- the telepty daemon is running (`aigentry start` first), the orchestrator session's state can be read with your telepty token, and the terminal is interactive.
+
+`start` refuses if an orchestrator is already live under the default session id (`$ORCHESTRATOR_SID`, else `orchestrator`) (use `restart`); on `restart`, the boot asks you to type `YES` before it replaces the running orchestrator. Both refuse when run from inside an agent session. That refusal is an advisory safety net, **not a security boundary**: the boot script and component commands stay directly runnable (and a bridge whose path contains spaces is not recognised by it). While the boot runs, Ctrl-C and Ctrl-\ reach the boot from your terminal; the hub forwards no signal and never kills anything itself. Orchestrator `start`/`restart` are **not supported on native Windows**.
+
+**Platforms.** macOS and Linux are the primary targets. On native Windows, the portable parts — `status`, `doctor`, `help`/`version` and component passthrough — are meant to work wherever the component itself works, and `status`/`doctor` label each component: telepty is **beta**, brain has a **known defect**, devkit and deliberation are **unmeasured**; aterm's app is macOS arm64 only. Not every component works on every platform today.
+
+You don't have to install everything — **any module can be installed on its own** (see each section below).
 
 ## Ecosystem
 
@@ -72,6 +99,8 @@ Other hub commands: `aigentry version`, `aigentry help`. You don't have to insta
 
 > Licenses: all MIT except `@dmsdc-ai/aterm` (UNLICENSED).
 
+> The table is a snapshot generated from `ecosystem.json` (vendored from aigentry-devkit, last refreshed 2026-07-26). Its versions and publication flags — and the versions quoted in the module sections below — can lag npm. Run `aigentry status` to see what is actually installed.
+
 How they relate: the **orchestrator** drives terminal sessions by pushing prompts through **telepty**, which transports them across machines; **deliberation** arbitrates when multiple sessions need to agree; **brain** carries memory across resets; **devkit** installs and configures the whole thing; **aterm** is one of the terminals sessions can run in.
 
 ---
@@ -85,7 +114,7 @@ A PTY orchestration daemon and session bridge for AI-CLI workflows: spawn, attac
 ```bash
 npm install -g @dmsdc-ai/aigentry-telepty      # or the curl/PowerShell installer
 
-telepty daemon                                 # start the background daemon (:3848)
+telepty daemon start                           # start the daemon in the background (:3848)
 telepty allow --id claude-main claude          # wrap a CLI for remote inject
 telepty list                                   # sessions across the tailnet
 telepty inject claude-main "refactor auth"     # inject a prompt
@@ -144,9 +173,9 @@ npm install -g @dmsdc-ai/aterm
 
 ## orchestrator — control tower (internal)
 
-Repo: [`dmsdc-ai/aigentry-orchestrator`](https://github.com/dmsdc-ai/aigentry-orchestrator) · *not published to npm*
+Repo: [`dmsdc-ai/aigentry-orchestrator`](https://github.com/dmsdc-ai/aigentry-orchestrator) · package `@dmsdc-ai/aigentry-orchestrator` (command `aigentry-orchestrator`) · *not bundled by the hub — installed separately*
 
-The conductor that drives multi-session AI dispatch — it decides what work runs where and pushes prompts into sessions through telepty. The repository is public, but it is **ecosystem-internal orchestration infrastructure, not a public product**: there's no npm package to install and no supported public API.
+The conductor that drives multi-session AI dispatch — it decides what work runs where and pushes prompts into sessions through telepty. The repository is public, but it is **ecosystem-internal orchestration infrastructure, not a public product**: the hub does not install it and there's no supported public API. `aigentry start orchestrator` only launches an existing control workspace (see [Orchestrator launch](#orchestrator-launch-macos--linux)).
 
 ---
 
@@ -156,7 +185,7 @@ The differentiator here is candor, not gloss. Real state today:
 
 - **Shipping** — **telepty** (0.6.9). Battle-tested, standalone, cross-machine, with a documented "Limitations" section it stands behind.
 - **Early** — **brain** (0.2.8), **deliberation** (0.0.47), **devkit** (0.0.22), **aterm** (0.2.14). Functional and published, but pre-1.0: surfaces and internals still move, and some features are explicitly unfinished (see each module's own README).
-- **Internal** — **orchestrator**. Public repo, unpublished, no supported public API.
+- **Internal** — **orchestrator**. Public repo, not bundled by the hub, no supported public API.
 
 If a capability isn't listed above, assume it isn't there yet.
 

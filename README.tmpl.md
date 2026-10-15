@@ -15,7 +15,7 @@
 
 ## Quickstart
 
-> **Source feature — not on npm yet.** The `doctor`, `start`, `restart` and component commands below exist in this repository's source (meta package 0.1.1) but are **not in a published npm release yet**. An `aigentry` installed from npm today may only offer `status`, `version` and `help`.
+> **CLI version scope.** Version 0.2.0 includes the `doctor`, `start`, `restart` and component commands below. Older versions may offer only `status`, `version` and `help`. Check available npm registry versions to determine whether 0.2.0 can be installed.
 
 ```bash
 # Install the hub (Node.js >= 20.11.0)

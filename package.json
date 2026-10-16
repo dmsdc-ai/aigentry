@@ -1,6 +1,6 @@
 {
   "name": "@dmsdc-ai/aigentry",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Sovereign Brain OS for AI Agents — meta package that installs the entire aigentry ecosystem",
   "bin": {
     "aigentry": "bin/aigentry.js"

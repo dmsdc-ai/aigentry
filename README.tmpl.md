@@ -15,7 +15,7 @@
 
 ## Quickstart
 
-> **CLI version scope.** Version 0.2.0 includes the `doctor`, `start`, `restart` and component commands below. Older versions may offer only `status`, `version` and `help`. Check available npm registry versions to determine whether 0.2.0 can be installed.
+> **CLI scope.** This README documents the command surface shipped in this package: `status`, `doctor`, `start`, `restart`, `version`, `help`, and component passthrough. Earlier hub releases shipped a smaller surface — `status`, `version` and `help` only — so if you pin an older version, consult that release's own README and the published version list (`npm view @dmsdc-ai/aigentry versions`) before relying on a command documented here. Per-command capability limits, and the verbs this version does not provide, are stated inline below.
 
 ```bash
 # Install the hub (Node.js >= 20.11.0)

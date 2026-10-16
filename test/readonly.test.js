@@ -489,3 +489,17 @@ describe('1211: status output is raw UTF-8 (cause of the reported glyph damage i
     });
   }
 });
+
+describe('unified setup refuses old packages without diagnostic probes', () => {
+  for (const argv of [['setup'], ['install'], ['devkit', 'setup'], ['devkit', 'install']]) {
+    it(argv.join(' ') + ' neither calls the old installer nor reads daemon credentials', async (t) => {
+      const fx = healthyWorld(t);
+      const r = await trapped(fx, {}, argv);
+      assertReadOnly(r, argv.join(' '));
+      assert.equal(r.code, 1);
+      assert.match(r.h.stderr(), /SETUP_INCOMPATIBLE/);
+      assert.deepEqual(r.h.rec.http, []);
+      assertNoSecrets(r.h.all(), argv.join(' '));
+    });
+  }
+});

@@ -245,3 +245,26 @@ describe('component passthrough', () => {
     noProcs(h);
   });
 });
+
+describe('unified setup route parsing', () => {
+  it('canonical aliases preserve devkit options verbatim', () => {
+    const { parseArgs } = H.loadLib().commands;
+    const options = ['--configure-only', '--runtime', 'defer', '--accept-plan', 'a'.repeat(64)];
+    for (const verb of ['setup', 'install']) {
+      assert.deepEqual(parseArgs([verb, ...options]),
+        { verb: 'setup', component: null, rest: options, flags: {} });
+    }
+    assert.equal(parseArgs([]).verb, 'status');
+    assert.deepEqual(parseArgs(['devkit']).rest, []);
+  });
+  it('setup and install have registry-derived help without resolving packages', async (t) => {
+    const fx = H.makeFixture(t);
+    for (const topic of ['setup', 'install']) {
+      const h = H.makeRt(fx);
+      assert.equal(await h.run(['help', topic]), 0);
+      assert.match(h.stdout(), /setup\|install/);
+      noProcs(h);
+      assert.deepEqual(h.rec.http, []);
+    }
+  });
+});

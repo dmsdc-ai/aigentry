@@ -167,3 +167,32 @@ describe('bundled resolution (any host)', () => {
     assert.deepEqual(h.rec.procs, []);
   });
 });
+
+describe('setup-specific resolver trust boundary', () => {
+  it('a broken preferred PATH package cannot fall back to bundled setup', async (t) => {
+    const fx = H.makeFixture(t);
+    H.installBundled(fx, 'devkit');
+    const preferred = H.installOnPathDirect(fx, 'devkit');
+    const f = path.join(preferred.dir, 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(f));
+    pkg.bin['aigentry-devkit'] = 'missing.js';
+    fs.writeFileSync(f, JSON.stringify(pkg));
+    const h = H.makeRt(fx, { platform: process.platform, arch: process.arch,
+      env: { PATH: preferred.binDirs.join(path.delimiter) } });
+    assert.equal(await h.run(['setup']), 1);
+    assert.match(h.stderr(), /SETUP_INCOMPATIBLE/);
+    assert.deepEqual(h.rec.procs, []);
+  });
+  it('package metadata outside the selected package refuses before module loading', async (t) => {
+    const fx = H.makeFixture(t);
+    const dir = H.installBundled(fx, 'devkit');
+    const f = path.join(dir, 'package.json');
+    const outside = H.write(path.join(fx.root, 'foreign-package.json'), fs.readFileSync(f));
+    fs.unlinkSync(f);
+    fs.symlinkSync(outside, f);
+    const h = H.makeRt(fx, { platform: process.platform, arch: process.arch });
+    assert.equal(await h.run(['setup']), 1);
+    assert.match(h.stderr(), /SETUP_INCOMPATIBLE/);
+    assert.deepEqual(h.rec.procs, []);
+  });
+});

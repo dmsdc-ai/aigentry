@@ -347,9 +347,9 @@ describe('1211: the installed count names its denominator and the optional modul
     const text = r.h.stdout();
     assert.match(text, /5\/5 bundled modules installed/, 'the denominator says what it counts');
     assert.ok(!/(^|\n)\s*5\/5 modules installed/.test(text), 'the bare, unqualified count is gone');
-    const optional = text.split('\n').find((l) => /optional modules installed/.test(l));
-    assert.ok(optional, 'optional modules are counted on their own line');
-    assert.match(optional, /0\/2 optional modules installed/);
+    const optional = text.split('\n').find((l) => /separately installed modules/.test(l));
+    assert.ok(optional, 'the separately installed modules are counted on their own line');
+    assert.match(optional, /0\/2 separately installed modules/);
     assert.match(optional, /orchestrator/, 'the missing optional orchestrator is named');
     assert.match(optional, /logger/, 'the missing optional logger is named');
   });
@@ -362,7 +362,7 @@ describe('1211: the installed count names its denominator and the optional modul
     const r = await trapped(fx, { env, http: healthyRoutes({ health: H.P.refused() }) }, ['status']);
     const text = r.h.stdout();
     assert.match(text, /5\/5 bundled modules installed/);
-    assert.match(text, /1\/2 optional modules installed/);
+    assert.match(text, /1\/2 separately installed modules/);
     assert.ok(!/not installed: .*orchestrator/.test(text), 'an installed optional module is not listed as missing');
   });
 
@@ -388,6 +388,83 @@ describe('1211: the installed count names its denominator and the optional modul
     // The structured counts are derived from the same component rows, not a second source of truth.
     const bundledRows = doc.components.filter((c) => ['aterm', 'telepty', 'devkit', 'brain', 'deliberation'].includes(c.name));
     assert.equal(doc.modules.bundled.installed, bundledRows.filter((c) => c.installed).length);
+  });
+});
+
+// ── 1211 R2 rework: the three presentation defects of the independent review ─
+// R1 status must not render an affirmative row for an install `doctor` calls broken;
+// R2 the CLI command cell must not name a runnable source on an OS that refuses the command;
+// R3 'optional' keeps one sense per screen (requiredness on the row, not the footer).
+// Rendering only: resolution order, `cli` values, `onPath`, exit codes and the read-only
+// guarantee are unchanged, and each case is measured in a world the committed helpers build.
+describe('1211 R1: a broken install check and the status row agree', () => {
+  // aterm's own precondition is the native app bundle, checked in `componentCheck` (which writes
+  // into g.checks), not in `info.broken` — so the row has to read that check too.
+  it('a bundled aterm with no native app is not an all-affirmative row, and doctor says the same', async (t) => {
+    const fx = H.makeFixture(t);
+    for (const n of H.BUNDLED.filter((x) => x !== 'aterm')) H.installBundled(fx, n);
+    H.installBundled(fx, 'aterm', { noNativeApp: true });
+    const opts = { platform: 'darwin', arch: 'arm64', http: healthyRoutes({ health: H.P.refused() }) };
+
+    const rd = await trapped(fx, opts, ['doctor', '--json']);
+    assertReadOnly(rd, 'noNativeApp doctor');
+    const install = H.checkById(H.parseOneJson(rd.h.stdout()), 'component.aterm.install');
+    assert.equal(install.state, 'broken', 'doctor calls this install broken');
+    assert.match(install.detail, /native app bundle missing/, 'and says which precondition failed');
+
+    const rs = await trapped(fx, opts, ['status']);
+    assertReadOnly(rs, 'noNativeApp status');
+    assert.equal(rs.code, 0, 'status always exits 0');
+    const row = rs.h.stdout().split('\n').find((l) => l.includes(' aterm '));
+    assert.ok(row, 'aterm row present');
+    assert.ok(!row.trim().startsWith('✓'), `a broken install must not open with an affirmative icon (${row.trim()})`);
+    assert.match(row, /\(broken install\)/, `the row must carry doctor's broken verdict (${row.trim()})`);
+  });
+});
+
+describe('1211 R2: an unsupported OS is not a runnable command', () => {
+  // `aigentry <name>` hits the passthrough platform gate before any resolution (exit 6), so the
+  // cell may not name a source; `cli` stays resolution-origin provenance, read with `supported`.
+  it('the CLI command cell claims nothing runnable, while --json keeps cli as provenance', async (t) => {
+    const fx = H.makeFixture(t);
+    H.installAllBundled(fx);
+    const opts = { platform: 'linux', arch: 'x64', http: healthyRoutes({ health: H.P.refused() }) };
+
+    const r = await trapped(fx, opts, ['status']);
+    assertReadOnly(r, 'unsupported-os status');
+    assert.equal(r.code, 0);
+    const row = r.h.stdout().split('\n').find((l) => l.includes(' aterm '));
+    assert.ok(row, 'aterm row present');
+    assert.ok(!/✓/.test(row), `no affirmative glyph for a command that refuses to run (${row.trim()})`);
+    assert.ok(!/bundled/.test(row), `no resolution source may be offered as runnable here (${row.trim()})`);
+    assert.match(row, /\(unsupported on this OS\)/, 'the row still says why');
+
+    const rj = await trapped(fx, opts, ['status', '--json']);
+    assertReadOnly(rj, 'unsupported-os status --json');
+    const aterm = H.parseOneJson(rj.h.stdout()).components.find((c) => c.name === 'aterm');
+    assert.equal(aterm.supported, false, 'supported is the runnability gate');
+    assert.equal(aterm.cli, 'bundled', 'cli stays the documented resolution origin, to be read with supported');
+    assert.equal(aterm.onPath, false, 'onPath keeps its PATH-only meaning');
+  });
+});
+
+describe('1211 R3: "optional" means not required, and only that', () => {
+  it('an absent optional bundled aterm keeps the row word while the footer says separately installed', async (t) => {
+    const fx = H.makeFixture(t);
+    for (const n of H.BUNDLED.filter((x) => x !== 'aterm')) H.installBundled(fx, n);
+    const r = await trapped(fx, { platform: 'darwin', arch: 'arm64', http: healthyRoutes({ health: H.P.refused() }) }, ['status']);
+    assertReadOnly(r, 'optional-word status');
+    assert.equal(r.code, 0);
+    const text = r.h.stdout();
+    const row = text.split('\n').find((l) => l.includes(' aterm '));
+    assert.ok(row, 'aterm row present');
+    assert.match(row, /– optional/, 'the row word keeps its requiredness sense');
+    assert.match(text, /4\/5 bundled modules installed/, 'the bundled denominator is unchanged');
+    const sep = text.split('\n').find((l) => /separately installed modules/.test(l));
+    assert.ok(sep, 'the non-bundled modules are counted on their own line');
+    assert.match(sep, /0\/2 separately installed modules/, 'the footer label carries one sense');
+    assert.match(sep, /\(not installed: orchestrator, logger\)/, 'the explicit name list is preserved');
+    assert.ok(!/optional modules/.test(text), 'the not-bundled sense of "optional" is gone from the screen');
   });
 });
 

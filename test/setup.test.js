@@ -243,3 +243,52 @@ test('a valid contract numeric return and custom streams pass through unchanged'
   assert.equal(r.out, JSON.stringify(args));
   assert.equal(r.err, 'fixture stderr');
 });
+
+for (const route of ROUTES) {
+  for (const fallback of ['bundled', 'later PATH']) {
+    for (const broken of [true, false]) {
+      test('preferred PATH presence: ' + route.join(' ') + ' / ' + fallback + ' / ' + (broken ? 'dangling' : 'absent'), async () => {
+        const fx = fixture();
+        const preferred = fx.pathDir;
+        if (fallback === 'later PATH') {
+          const later = path.join(fx.root, 'later bin');
+          fs.mkdirSync(later);
+          const pkg = JSON.parse(fs.readFileSync(path.join(fx.pkg, 'package.json')));
+          fs.symlinkSync(path.join(fx.pkg, pkg.bin['aigentry-devkit']), path.join(later, 'aigentry-devkit'));
+          const moved = path.join(fx.global, 'devkit');
+          fs.renameSync(fx.pkg, moved);
+          fs.unlinkSync(path.join(later, 'aigentry-devkit'));
+          fs.symlinkSync(path.join(moved, pkg.bin['aigentry-devkit']), path.join(later, 'aigentry-devkit'));
+          fs.chmodSync(path.join(moved, pkg.bin['aigentry-devkit']), 0o700);
+          fx.pkg = moved;
+          fx.pathDir = preferred + path.delimiter + later;
+        }
+        if (broken) fs.symlinkSync(path.join(fx.root, 'missing.js'), path.join(preferred, 'aigentry-devkit'));
+        const moduleFile = path.join(fx.pkg, 'lib/setup.js');
+        assert.equal(require.cache[moduleFile], undefined);
+        const r = await invoke(fx, [...route, ...CHOICES, '--dry-run']);
+        assert.deepEqual(r.procs, []);
+        if (broken) {
+          assert.equal(r.code, 1);
+          assert.equal(r.out, '');
+          assert.equal(r.err, 'SETUP_INCOMPATIBLE: trusted devkit setup contract 1 is required within the supported package range. Ask the package owner to repair/update the selected devkit package and remove PATH shadows; legacy installation was not run.\n');
+          assert.equal(require.cache[moduleFile], undefined, 'fallback module must not be imported');
+        } else {
+          assert.equal(r.code, 0, r.err);
+          assert.match(r.out, /Configure-only preview/);
+          assert.equal(r.err, '');
+          assert.ok(require.cache[moduleFile], 'genuinely absent preferred entry allows valid fallback');
+        }
+      });
+    }
+  }
+  test('preferred PATH presence: ' + route.join(' ') + ' / all absent', async () => {
+    const fx = fixture();
+    fs.rmSync(fx.pkg, { recursive: true });
+    const r = await invoke(fx, [...route, ...CHOICES, '--dry-run']);
+    assert.equal(r.code, 3);
+    assert.equal(r.out, '');
+    assert.equal(r.err, 'NOT_INSTALLED: @dmsdc-ai/aigentry-devkit was not found. Install the supported aigentry package through your package owner.\n');
+    assert.deepEqual(r.procs, []);
+  });
+}

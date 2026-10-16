@@ -257,3 +257,158 @@ describe('R2: status never measures auth or sessions; it says so (SEC-A)', () =>
     assert.equal(r.h.rec.http.filter((c) => c.path === '/api/health').length, 1);
   });
 });
+
+// ── 1211 installed-state presentation ───────────────────────────────────────
+// Source contract under test (lib/commands.js `status`, lib/resolve.js `inspectComponent`):
+//   C1 a bundled copy is runnable: the CLI column states *where* the command resolves from
+//      (PATH / bundled / node_modules), and never reports a runnable bundled copy as absent;
+//   C2 the installed count names its denominator (bundled modules), and
+//   C3 optional, separately installed modules are counted and named separately from it.
+// Rendering only: resolution order, exit codes and the read-only guarantee are unchanged.
+describe('1211: status tells PATH, bundled and missing apart (C1)', () => {
+  // The diagnosed host: five bundled modules present, no component bin on PATH.
+  function bundledOnlyWorld(t) {
+    const fx = H.makeFixture(t);
+    H.installAllBundled(fx);
+    return fx;
+  }
+
+  it('a bundled-only aterm/devkit is shown as runnable from the bundled copy, not as absent', async (t) => {
+    const fx = bundledOnlyWorld(t);
+    const r = await trapped(fx, { http: healthyRoutes({ health: H.P.refused() }) }, ['status']);
+    assertReadOnly(r, 'bundled-only status');
+    assert.equal(r.code, 0);
+    const text = r.h.stdout();
+    for (const name of ['aterm', 'devkit', 'telepty', 'brain']) {
+      const row = text.split('\n').find((l) => l.includes(` ${name} `));
+      assert.ok(row, `${name} row present`);
+      assert.match(row, /bundled/, `${name}: the CLI column must say the bundled copy runs it`);
+      assert.ok(!/✗/.test(row), `${name}: a runnable bundled copy must not be marked absent (${row.trim()})`);
+    }
+  });
+
+  it('--json carries the same provenance as a structured field, consistent with onPath', async (t) => {
+    const fx = bundledOnlyWorld(t);
+    const r = await trapped(fx, { http: healthyRoutes({ health: H.P.refused() }) }, ['status', '--json']);
+    assertReadOnly(r, 'bundled-only status --json');
+    assert.equal(r.code, 0);
+    const doc = H.parseOneJson(r.h.stdout());
+    const by = (n) => doc.components.find((c) => c.name === n);
+    for (const n of ['aterm', 'devkit', 'telepty', 'brain']) {
+      assert.equal(by(n).cli, 'bundled', `${n}.cli`);
+      assert.equal(by(n).onPath, false, `${n}.onPath stays the PATH-only fact`);
+    }
+    // A component with no primary bin, and one that is not installed at all, are distinct states.
+    assert.equal(by('deliberation').cli, 'none', 'deliberation declares no primary bin');
+    assert.equal(by('orchestrator').cli, 'missing', 'orchestrator is not installed');
+    for (const c of doc.components) assert.equal(c.onPath, c.cli === 'path', `${c.name}: onPath agrees with cli`);
+  });
+
+  it('a PATH copy shadowing the bundled copy is reported as PATH in both renderings (already-installed conflict)', { skip: POSIX_ONLY }, async (t) => {
+    const fx = bundledOnlyWorld(t);
+    // The PATH entry must hold a file named like the bin, so PATH discovery finds it.
+    const onPath = H.installOnPathDirect(fx, 'telepty', { spec: { version: '0.8.9', bin: { telepty: 'bin/telepty' } } });
+    const env = { PATH: onPath.binDirs.join(path.delimiter) };
+    const r = await trapped(fx, { env, http: healthyRoutes({ health: H.P.refused() }) }, ['status']);
+    assertReadOnly(r, 'shadowed status');
+    assert.equal(r.code, 0);
+    const row = r.h.stdout().split('\n').find((l) => l.includes(' telepty '));
+    assert.match(row, /PATH/, 'the PATH copy is the one that runs, and is named as such');
+    assert.match(row, /v0\.8\.9/, 'the version shown is the PATH copy that would run');
+
+    const rj = await trapped(fx, { env, http: healthyRoutes({ health: H.P.refused() }) }, ['status', '--json']);
+    const telepty = H.parseOneJson(rj.h.stdout()).components.find((c) => c.name === 'telepty');
+    assert.equal(telepty.cli, 'path');
+    assert.equal(telepty.onPath, true);
+    assert.equal(telepty.source, 'path');
+  });
+
+  it('a bundled package whose bin cannot run is "broken", not silently "missing"', async (t) => {
+    const fx = H.makeFixture(t);
+    H.installAllBundled(fx);
+    // devkit's declared bin exists but is not a Node script: resolvable package, unrunnable bin.
+    H.installBundled(fx, 'devkit', {
+      spec: { bin: { 'aigentry-devkit': 'bin/aigentry-devkit' } },
+      binSource: '#!/bin/sh\necho fixture must never run >&2\nexit 99\n',
+    });
+    const r = await trapped(fx, { http: healthyRoutes({ health: H.P.refused() }) }, ['status', '--json']);
+    assertReadOnly(r, 'broken bin status');
+    assert.equal(r.code, 0, 'status always exits 0');
+    assert.equal(H.parseOneJson(r.h.stdout()).components.find((c) => c.name === 'devkit').cli, 'broken');
+  });
+});
+
+describe('1211: the installed count names its denominator and the optional modules (C2, C3)', () => {
+  it('"5/5" is qualified as bundled, and the uninstalled optional orchestrator is listed separately', async (t) => {
+    const fx = H.makeFixture(t);
+    H.installAllBundled(fx);
+    const r = await trapped(fx, { http: healthyRoutes({ health: H.P.refused() }) }, ['status']);
+    assertReadOnly(r, 'denominator status');
+    const text = r.h.stdout();
+    assert.match(text, /5\/5 bundled modules installed/, 'the denominator says what it counts');
+    assert.ok(!/(^|\n)\s*5\/5 modules installed/.test(text), 'the bare, unqualified count is gone');
+    const optional = text.split('\n').find((l) => /optional modules installed/.test(l));
+    assert.ok(optional, 'optional modules are counted on their own line');
+    assert.match(optional, /0\/2 optional modules installed/);
+    assert.match(optional, /orchestrator/, 'the missing optional orchestrator is named');
+    assert.match(optional, /logger/, 'the missing optional logger is named');
+  });
+
+  it('an installed optional orchestrator moves only the optional count; bundled stays its own total', { skip: POSIX_ONLY }, async (t) => {
+    const fx = H.makeFixture(t);
+    H.installAllBundled(fx);
+    const orch = H.installOnPathDirect(fx, 'orchestrator');
+    const env = { PATH: orch.binDirs.join(path.delimiter) };
+    const r = await trapped(fx, { env, http: healthyRoutes({ health: H.P.refused() }) }, ['status']);
+    const text = r.h.stdout();
+    assert.match(text, /5\/5 bundled modules installed/);
+    assert.match(text, /1\/2 optional modules installed/);
+    assert.ok(!/not installed: .*orchestrator/.test(text), 'an installed optional module is not listed as missing');
+  });
+
+  it('a missing bundled module lowers only the bundled count and still keeps the reinstall remedy', async (t) => {
+    const fx = H.makeFixture(t);
+    for (const n of H.BUNDLED.filter((x) => x !== 'brain')) H.installBundled(fx, n);
+    const r = await trapped(fx, { http: healthyRoutes({ health: H.P.refused() }) }, ['status']);
+    const text = r.h.stdout();
+    assert.equal(r.code, 0);
+    assert.match(text, /4\/5 bundled modules installed/);
+    assert.match(text, /npm i -g @dmsdc-ai\/aigentry/, 'the reinstall remedy still appears');
+  });
+
+  it('--json states the same counts as the human output', async (t) => {
+    const fx = H.makeFixture(t);
+    H.installAllBundled(fx);
+    const r = await trapped(fx, { http: healthyRoutes({ health: H.P.refused() }) }, ['status', '--json']);
+    const doc = H.parseOneJson(r.h.stdout());
+    assert.deepEqual(doc.modules.bundled, { installed: 5, total: 5 });
+    assert.equal(doc.modules.optional.installed, 0);
+    assert.equal(doc.modules.optional.total, 2);
+    assert.deepEqual(doc.modules.optional.missing, ['orchestrator', 'logger']);
+    // The structured counts are derived from the same component rows, not a second source of truth.
+    const bundledRows = doc.components.filter((c) => ['aterm', 'telepty', 'devkit', 'brain', 'deliberation'].includes(c.name));
+    assert.equal(doc.modules.bundled.installed, bundledRows.filter((c) => c.installed).length);
+  });
+});
+
+describe('1211: status output is raw UTF-8 (cause of the reported glyph damage is unproven)', () => {
+  // The source literals are preserved as-is: this asserts only what is measurable here — the
+  // bytes this CLI emits are well-formed UTF-8 with no replacement character. It makes no claim
+  // about the TTY, transport or copy paths that were never measured.
+  // Each command is asserted only on the glyphs it actually emits: the status table draws the
+  // module rows (✓, —, ─), doctor prints one state icon per check line.
+  for (const [argv, glyphs] of [[['status'], ['✓', '—', '─']], [['doctor'], ['✓']]]) {
+    it(`${argv[0]} emits well-formed UTF-8 with no U+FFFD`, async (t) => {
+      const fx = H.makeFixture(t);
+      H.installAllBundled(fx);
+      const r = await trapped(fx, { http: healthyRoutes({ health: H.P.refused() }) }, argv);
+      const text = r.h.all();
+      assert.ok(!text.includes('�'), `${argv[0]}: U+FFFD in output`);
+      const bytes = Buffer.from(text, 'utf8');
+      assert.equal(new TextDecoder('utf-8', { fatal: true }).decode(bytes), text, `${argv[0]}: bytes round-trip`);
+      for (const glyph of glyphs) {
+        assert.ok(text.includes(glyph), `${argv[0]}: expected literal U+${glyph.codePointAt(0).toString(16).toUpperCase()} survived`);
+      }
+    });
+  }
+});

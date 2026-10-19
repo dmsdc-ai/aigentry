@@ -12,6 +12,11 @@ const FILES = ['package.json', 'lib/setup.js', 'lib/install-state.js',
   'bin/aigentry-devkit.js', 'config/installer-manifest.json', 'config/setup-capabilities.json'];
 const CHOICES = ['--non-interactive', '--profile', 'core', '--runtime', 'defer', '--configure-only'];
 
+function diagnostic(r) {
+  const quote = s => JSON.stringify(s.slice(0, 2048) + (s.length > 2048 ? '...[truncated]' : ''))
+    .replace(/[\u007f-\u009f\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+  return `code=${r.code} stdout=${quote(r.out)} stderr=${quote(r.err)}`;
+}
 function fixture(actual = true) {
   // Retained for exact emitted-byte review; the enclosing test runner owns cleanup.
   const fx = H.makeFixture();
@@ -79,7 +84,7 @@ async function invoke(fx, argv, { input, writes = false, procs } = {}) {
 test('canonical setup reaches the actual inert devkit preview without a child', async () => {
   const fx = fixture();
   const r = await invoke(fx, ['setup', ...CHOICES, '--dry-run']);
-  assert.equal(r.code, 0);
+  assert.equal(r.code, 0, diagnostic(r));
   assert.match(r.out, /Configure-only preview/);
   assert.deepEqual(r.procs, []);
 });
@@ -93,16 +98,16 @@ test('old exact devkit setup refuses without launching the legacy installer', as
 });
 
 const ROUTES = [['setup'], ['install'], ['devkit', 'setup'], ['devkit', 'install']];
-function consent(text) {
+function consent(text, detail = '') {
   const match = text.match(/--accept-plan ([a-f0-9]{64})/);
-  assert.ok(match, 'actual devkit emits a consent digest');
+  assert.ok(match, 'actual devkit emits a consent digest ' + detail);
   return match[1];
 }
 for (const route of ROUTES) {
   test(route.join(' ') + ' calls actual module; missing and stale consent stay read-only', async () => {
     const fx = fixture();
     const preview = await invoke(fx, [...route, ...CHOICES, '--dry-run']);
-    assert.equal(preview.code, 0);
+    assert.equal(preview.code, 0, diagnostic(preview));
     assert.match(preview.out, /not runtime-verified/);
     assert.deepEqual(preview.procs, []);
     for (const args of [CHOICES, [...CHOICES, '--accept-plan', '0'.repeat(64)]]) {
@@ -119,7 +124,7 @@ test('all four aliases produce the same real plan and stream output', async () =
   const outputs = [];
   for (const route of ROUTES) outputs.push(await invoke(fx, [...route, ...CHOICES, '--dry-run']));
   for (const r of outputs) {
-    assert.equal(r.code, 0);
+    assert.equal(r.code, 0, diagnostic(r));
     assert.equal(r.out, outputs[0].out);
     assert.equal(r.err, '');
   }
@@ -134,17 +139,17 @@ for (const [label, input, code, pattern] of [
     const fx = fixture();
     const args = label === 'interactive preview' ? ['--dry-run'] : [];
     const r = await invoke(fx, ['setup', ...args], { input });
-    assert.equal(r.code, code);
-    assert.match(r.out + r.err, pattern);
+    assert.equal(r.code, code, diagnostic(r));
+    assert.match(r.out + r.err, pattern, diagnostic(r));
     assert.deepEqual(r.procs, []);
   });
 }
 test('configure-only saves the actual approved local journal; revisit requires fresh consent', async () => {
   const fx = fixture();
   const preview = await invoke(fx, ['setup', ...CHOICES, '--dry-run']);
-  assert.equal(preview.code, 0);
+  assert.equal(preview.code, 0, diagnostic(preview));
   const saved = await invoke(fx, ['devkit', 'install', ...CHOICES, '--accept-plan', consent(preview.out)], { writes: true });
-  assert.equal(saved.code, 0, saved.err);
+  assert.equal(saved.code, 0, diagnostic(saved));
   assert.match(saved.out, /Preference saved: deferred, not runtime-verified/);
   assert.deepEqual(saved.procs, []);
   const stateDir = path.join(fx.config, 'aigentry-devkit');
@@ -168,7 +173,7 @@ test('package source identity change invalidates previously approved plan', asyn
   const pkg = JSON.parse(fs.readFileSync(pkgFile, 'utf8'));
   pkg.description += ' fixture identity change';
   fs.writeFileSync(pkgFile, JSON.stringify(pkg));
-  const r = await invoke(fx, ['setup', ...CHOICES, '--accept-plan', consent(preview.out)]);
+  const r = await invoke(fx, ['setup', ...CHOICES, '--accept-plan', consent(preview.out, diagnostic(preview))]);
   assert.equal(r.code, 1);
   assert.match(r.err, /missing or stale/);
 });
@@ -211,7 +216,7 @@ for (const [label, mutate] of [
     mutate(fx);
     const r = await invoke(fx, ['install', ...CHOICES, '--dry-run']);
     assert.equal(r.code, 1);
-    assert.match(r.err, /^SETUP_INCOMPATIBLE:/);
+    assert.match(r.err, /^SETUP_INCOMPATIBLE:/, diagnostic(r));
     assert.ok(!r.err.includes('PRIVATE_MODULE_ERROR'));
     assert.ok(!r.err.includes('ESCAPED_MODULE_EXECUTED'));
     assert.deepEqual(r.procs, []);
@@ -230,7 +235,7 @@ test('supported newer version with contract1 remains supported', async () => {
   const file = path.join(fx.pkg, 'package.json'), pkg = JSON.parse(fs.readFileSync(file));
   pkg.version = '0.1.50'; fs.writeFileSync(file, JSON.stringify(pkg));
   const r = await invoke(fx, ['setup', ...CHOICES, '--dry-run']);
-  assert.equal(r.code, 0, r.err);
+  assert.equal(r.code, 0, diagnostic(r));
   assert.match(r.out, /0.1.50/);
 });
 test('a valid contract numeric return and custom streams pass through unchanged', async () => {
@@ -269,12 +274,12 @@ for (const route of ROUTES) {
         const r = await invoke(fx, [...route, ...CHOICES, '--dry-run']);
         assert.deepEqual(r.procs, []);
         if (broken) {
-          assert.equal(r.code, 1);
-          assert.equal(r.out, '');
+          assert.equal(r.code, 1, diagnostic(r));
+          assert.equal(r.out, '', diagnostic(r));
           assert.equal(r.err, 'SETUP_INCOMPATIBLE: trusted devkit setup contract 1 is required within the supported package range. Ask the package owner to repair/update the selected devkit package and remove PATH shadows; legacy installation was not run.\n');
           assert.equal(require.cache[moduleFile], undefined, 'fallback module must not be imported');
         } else {
-          assert.equal(r.code, 0, r.err);
+          assert.equal(r.code, 0, diagnostic(r));
           assert.match(r.out, /Configure-only preview/);
           assert.equal(r.err, '');
           assert.ok(require.cache[moduleFile], 'genuinely absent preferred entry allows valid fallback');

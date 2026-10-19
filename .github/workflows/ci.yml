@@ -19,12 +19,21 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check out frozen devkit fixture
+        uses: actions/checkout@v4
+        with:
+          repository: dmsdc-ai/aigentry-devkit
+          ref: f4a7994d0b6eeabbf90023ff0b84dca2723c8b24
+          path: .ci-fixtures/devkit
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
       # bash expands the glob on every OS (Node 20 `--test` does not take glob patterns), so every
       # test/*.test.js file runs; an empty glob fails instead of silently passing.
       - name: Contract tests
+        env:
+          U1_DEVKIT_FIXTURE_ROOT: ${{ github.workspace }}/.ci-fixtures/devkit
         shell: bash
         run: |
           shopt -s nullglob

@@ -19,14 +19,37 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check out frozen devkit fixture
+        uses: actions/checkout@v4
+        with:
+          repository: dmsdc-ai/aigentry-devkit
+          ref: f4a7994d0b6eeabbf90023ff0b84dca2723c8b24
+          path: .ci-fixtures/devkit
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - name: Linux ORIGINAL-default-temp canonical setup diagnostic (no acceptance credit)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        env:
+          U1_DEVKIT_FIXTURE_ROOT: ${{ github.workspace }}/.ci-fixtures/devkit
+        shell: bash
+        run: |
+          set +e
+          node --test --test-name-pattern='^canonical setup reaches the actual inert devkit preview without a child$' test/setup.test.js
+          status=$?
+          echo "ORIGINAL-default-temp characterization exit=$status; nonzero expected, no acceptance credit"
+          exit "$status"
       # bash expands the glob on every OS (Node 20 `--test` does not take glob patterns), so every
       # test/*.test.js file runs; an empty glob fails instead of silently passing.
       - name: Contract tests
+        env:
+          U1_DEVKIT_FIXTURE_ROOT: ${{ github.workspace }}/.ci-fixtures/devkit
+          AIGENTRY_TEST_FIXTURE_ROOT: ${{ runner.temp }}/aigentry-cli-owned
         shell: bash
         run: |
+          node -e "require('node:fs').mkdirSync(process.env.AIGENTRY_TEST_FIXTURE_ROOT, { mode: 0o700 })"
           shopt -s nullglob
           files=(test/*.test.js)
           if [ ${#files[@]} -eq 0 ]; then echo "no test files matched test/*.test.js"; exit 1; fi

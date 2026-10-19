@@ -46,7 +46,7 @@ jobs:
       - name: Contract tests
         env:
           U1_DEVKIT_FIXTURE_ROOT: ${{ github.workspace }}/.ci-fixtures/devkit
-          AIGENTRY_TEST_FIXTURE_ROOT: ${{ github.workspace }}/.ci-setup-owned
+          AIGENTRY_TEST_FIXTURE_ROOT: ${{ runner.temp }}/aigentry-cli-owned
         shell: bash
         run: |
           node -e "require('node:fs').mkdirSync(process.env.AIGENTRY_TEST_FIXTURE_ROOT, { mode: 0o700 })"
